@@ -65,7 +65,8 @@ def main() -> None:
     srv.add_argument("--host", default="127.0.0.1")
     srv.add_argument("--port", type=int, default=8000)
     sub.add_parser("stats")
-    sub.add_parser("reground", help="re-run quote grounding for all stored facts (no model calls)")
+    rg = sub.add_parser("reground", help="re-run quote grounding for all stored facts (no model calls)")
+    rg.add_argument("--reextract", action="store_true", help="first re-extract page text from the stored PDFs")
     rl = sub.add_parser("relink", help="(re)run cross-document linking for a document; pairs already judged are skipped")
     rl.add_argument("doc_ids", nargs="+", help="document ids, or 'all'")
     args = ap.parse_args()
@@ -78,6 +79,8 @@ def main() -> None:
         _stats()
     elif args.cmd == "reground":
         from . import extract
+        if args.reextract:
+            print("re-extracted pages:", extract.reextract_pages())
         print(extract.reground_all())
     elif args.cmd == "relink":
         asyncio.run(_relink(args.doc_ids))

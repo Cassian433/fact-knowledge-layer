@@ -40,11 +40,16 @@ def clean(text: str) -> str:
 
 
 def extract_pages(path: Path) -> list[str]:
-    """1-based physical page order. `sort=True` gives reading order, which matters for two-column reports."""
+    """1-based physical page order, text in the PDF's native content order (sort=False).
+
+    Geometric sorting (sort=True) interleaves the two columns of typeset reports line by line, which made ~25 % of
+    correct quotes from the RBI / Delhivery annual reports non-contiguous. The content-stream order that layout
+    software writes is almost always the logical reading order, and it also keeps a slide tile's number next to its
+    label."""
     out: list[str] = []
     with pymupdf.open(path) as doc:
         for page in doc:
-            out.append(clean(page.get_text("text", sort=True)))
+            out.append(clean(page.get_text("text", sort=False)))
     return out
 
 

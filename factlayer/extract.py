@@ -170,6 +170,22 @@ def ground(fact: dict[str, Any], pages: list[str]) -> None:
     fact["flags"] = flags
 
 
+def reextract_pages() -> int:
+    """Refresh the pages table from the stored PDFs (after a change to the text extractor)."""
+    from . import pdf as _pdf
+    n = 0
+    for doc in db.q("SELECT id, page_count FROM documents"):
+        path = config.UPLOAD_DIR / f"{doc['id']}.pdf"
+        if not path.exists():
+            continue
+        pages = _pdf.extract_pages(path)
+        with db.tx() as conn:
+            conn.executemany("UPDATE pages SET text=? WHERE doc_id=? AND page_no=?",
+                             [(t, doc["id"], i) for i, t in enumerate(pages, start=1)])
+        n += len(pages)
+    return n
+
+
 def reground_all() -> dict[str, int]:
     """Re-run grounding for every stored fact (no model calls). Used after improving the matcher."""
     counts: dict[str, int] = {}

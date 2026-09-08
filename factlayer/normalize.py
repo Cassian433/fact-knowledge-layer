@@ -144,6 +144,7 @@ def fy_start_month_from_convention(convention: str) -> int:
 def number_in_text(value: float, text: str) -> bool:
     """Does the number (as written with commas / decimals / Indian grouping) appear in the quote?"""
     digits = re.sub(r"[,\s]", "", text)
+    value = abs(value)  # "(296.99)" in a statement is -296.99 in the fact
     cands = set()
     for fmt in ("{:.0f}", "{:.1f}", "{:.2f}", "{:.3f}", "{:g}"):
         try:
