@@ -60,7 +60,7 @@ def _doc_counts() -> dict[str, dict[str, int]]:
     counts: dict[str, dict[str, int]] = {}
     for r in db.q("SELECT doc_id, COUNT(*) n, SUM(grounding='unverified') unverified FROM facts GROUP BY doc_id"):
         counts[r["doc_id"]] = {"facts": r["n"], "unverified": r["unverified"] or 0}
-    for r in db.q("SELECT f.doc_id d, COUNT(*) n FROM relations r JOIN facts f ON f.id IN (r.fact_a, r.fact_b) GROUP BY f.doc_id"):
+    for r in db.q("SELECT f.doc_id d, COUNT(*) n FROM relations r JOIN facts f ON f.id IN (r.fact_a, r.fact_b) WHERE r.type<>'unrelated' GROUP BY f.doc_id"):
         counts.setdefault(r["d"], {}).update(relations=r["n"])
     return counts
 
@@ -110,7 +110,8 @@ def get_pdf(doc_id: str) -> FileResponse:
 
 # --- facts ------------------------------------------------------------------------------------------------------------
 FACT_COLS = ("f.*, d.filename AS doc_filename, json_extract(d.meta,'$.title') AS doc_title, "
-             "json_extract(d.meta,'$.publication_date') AS doc_date")
+             "json_extract(d.meta,'$.publication_date') AS doc_date, "
+             "(SELECT COUNT(*) FROM relations r WHERE (r.fact_a=f.id OR r.fact_b=f.id) AND r.type<>'unrelated') AS rel_count")
 
 
 @app.get("/api/facts")
@@ -171,6 +172,34 @@ def get_fact(fact_id: str) -> dict[str, Any]:
     f["page_text"] = page["text"] if page else ""
     f["relations"] = _relations_for([fact_id])
     return f
+
+
+@app.get("/api/facts/{fact_id}/timeline")
+def fact_timeline(fact_id: str) -> dict[str, Any]:
+    """The same attribute everywhere: facts sharing this fact's attribute slug (any document, any period) plus every fact
+    linked to it by a non-unrelated relation, ordered by period. Each row carries its relation to the anchor fact, if any."""
+    f = db.one("SELECT * FROM facts WHERE id=?", (fact_id,))
+    if not f:
+        raise HTTPException(404, "no such fact")
+    rows = {r["id"]: r for r in db.q(
+        f"SELECT {FACT_COLS} FROM facts f JOIN documents d ON d.id=f.doc_id WHERE f.attribute_key=? AND f.kind=? "
+        "ORDER BY f.period_start, d.created_at LIMIT 200", (f["attribute_key"], f["kind"]))}
+    rels = db.q("SELECT * FROM relations WHERE (fact_a=? OR fact_b=?) AND type<>'unrelated'", (fact_id, fact_id))
+    rel_by_fact = {}
+    for r in rels:
+        other = r["fact_b"] if r["fact_a"] == fact_id else r["fact_a"]
+        rel_by_fact[other] = {"type": r["type"], "reconciliation": r["reconciliation"], "confidence": r["confidence"], "id": r["id"]}
+    missing = [i for i in rel_by_fact if i not in rows]
+    if missing:
+        marks = ",".join("?" * len(missing))
+        for r in db.q(f"SELECT {FACT_COLS} FROM facts f JOIN documents d ON d.id=f.doc_id WHERE f.id IN ({marks})", tuple(missing)):
+            rows[r["id"]] = r
+    out = list(rows.values())
+    for r in out:
+        r["relation"] = rel_by_fact.get(r["id"])
+        r["is_anchor"] = r["id"] == fact_id
+    out.sort(key=lambda r: (r["period_start"] or "9999", r["period_end"] or "", r["doc_date"] or ""))
+    return {"anchor": fact_id, "attribute_key": f["attribute_key"], "facts": out}
 
 
 # --- relations --------------------------------------------------------------------------------------------------------

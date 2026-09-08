@@ -80,7 +80,7 @@ async def main() -> None:
 
         # ---- segment 1: documents + upload (~35 s) -------------------------------------------------------------
         async def seg1(pg):
-            await caption(pg, "Fact Knowledge Layer", "Six PDFs already in the layer: three Delhivery filings (2022 prospectus, FY24 annual report, Q4 FY24 deck) and three Indian macro reports (Economic Survey, RBI Annual Report, IMF Article IV).")
+            await caption(pg, "Fact Knowledge Layer", "Six PDFs already in the layer: three Delhivery filings (2022 prospectus, FY24 annual report, Q4 FY24 deck) and three Indian macro reports (Economic Survey, RBI Annual Report, IMF Article IV). Header: 3,702 facts, 97 % grounded, 2,300 cross-document relations.")
             await pg.wait_for_timeout(5500)
             await caption(pg, "Document metadata", "Each document got LLM-derived metadata: publisher, publication date, period covered and — crucially — how it labels years, so \"FY24\" resolves to 1 Apr 2023 – 31 Mar 2024 for this document.")
             await scroll_to(pg, "#docs .card", 1)
@@ -117,6 +117,11 @@ async def main() -> None:
                 await target.click(force=True)
                 await pg.wait_for_timeout(1200)
                 await caption(pg, "Evidence", "Grounding is verified, not trusted: the quote is located on the stored page text and highlighted at its character offsets. Tiers: exact · fuzzy · window · unverified. 97.5 % of facts are grounded.")
+                await pg.wait_for_timeout(8000)
+                await caption(pg, "Timeline", "The same attribute across every document and period — prospectus, annual report, deck — with each row's relation to this fact: corroborates, reconciled by period or scope, contradicts.")
+                tl = await pg.query_selector("#timeline")
+                if tl:
+                    await tl.scroll_into_view_if_needed(); await pg.evaluate("document.querySelector('#modal').scrollBy(0, -60)")
                 await pg.wait_for_timeout(9000)
                 await pg.keyboard.press("Escape")
                 await pg.wait_for_timeout(600)

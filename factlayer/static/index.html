@@ -65,6 +65,22 @@
   .stat { font-size:22px; font-weight:600; } .stat small { font-size:12px; color:var(--muted); font-weight:400; display:block; }
   .empty { color:var(--muted); padding:30px; text-align:center; }
   details summary { cursor:pointer; color:var(--muted); }
+  .hstats { margin-left:auto; display:flex; gap:6px; flex-wrap:nowrap; white-space:nowrap; }
+  @media (max-width: 1700px) { header h1 span { display:none; } }
+  .hstats .pill { font-size:11.5px; padding:3px 10px; }
+  .hstats .pill b { color:var(--text); font-weight:600; margin-right:3px; }
+  .badge { display:inline-block; min-width:22px; text-align:center; padding:1px 7px; border-radius:999px; background:#212633; color:var(--text); font-size:11px; border:1px solid var(--line); }
+  .badge.zero { color:var(--muted); background:transparent; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .chip { cursor:pointer; border:1px solid var(--line); border-radius:999px; padding:4px 12px; font-size:12px; color:var(--muted); background:transparent; }
+  .chip.active { color:var(--text); background:#212633; }
+  .chip b { color:var(--text); margin-left:6px; }
+  .chip.corroborates b { color:var(--ok); } .chip.contradicts b { color:var(--bad); } .chip.reconciled b { color:var(--warn); }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+  .fact { border-left-width:3px; }
+  .tl tr.anchor td { background:rgba(91,156,255,.08); }
+  .tl td.val { font-weight:600; white-space:nowrap; }
+  .legend { display:flex; gap:10px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin:6px 0 12px; }
 </style>
 </head>
 <body>
@@ -77,6 +93,7 @@
     <button data-tab="showcase">Showcase</button>
     <button data-tab="stats">Stats</button>
   </nav>
+  <div class="hstats" id="hstats"></div>
 </header>
 <main>
   <section id="tab-documents">
@@ -94,10 +111,11 @@
       <button class="primary" id="fgo">Search</button>
       <span class="muted" id="fcount"></span>
     </div>
-    <div class="card" style="padding:0"><table id="ftable"><thead><tr><th>Doc · page</th><th>Subject</th><th>Attribute</th><th>Value</th><th>Period</th><th>Basis / scope</th><th>Grounding</th></tr></thead><tbody></tbody></table></div>
+    <div class="card" style="padding:0"><table id="ftable"><thead><tr><th>Doc · page</th><th>Subject</th><th>Attribute</th><th>Value</th><th>Period</th><th>Basis / scope</th><th>Grounding</th><th>Links</th></tr></thead><tbody></tbody></table></div>
   </section>
 
   <section id="tab-relations" hidden>
+    <div class="chips" id="rchips"></div>
     <div class="row" style="margin-bottom:12px">
       <select id="rtype"><option value="">all types</option><option value="corroborates">corroborates</option><option value="contradicts">contradicts</option><option value="reconciled">reconciled</option><option value="unrelated">unrelated (false matches)</option></select>
       <select id="rrec"><option value="">any reconciliation</option><option>period</option><option>scope</option><option>unit</option><option>rounding</option><option>vintage</option><option>estimate_vs_actual</option><option>definition</option><option>other</option></select>
@@ -126,6 +144,17 @@ const $$ = (s, el=document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const api = async (p, opts) => { const r = await fetch(p, opts); if (!r.ok) throw new Error(await r.text()); return r.json(); };
 let DOCS = [];
+const PALETTE = ['#5b9cff', '#3ccf91', '#ffb347', '#b48cff', '#ff8fab', '#4fd1c5', '#f6e05e', '#f97316'];
+function docColor(id) { const i = DOCS.findIndex(d => d.id === id); return PALETTE[(i < 0 ? 0 : i) % PALETTE.length]; }
+async function loadHeaderStats() {
+  try {
+    const s = await api('/api/stats');
+    const f = s.facts || {}; const rel = t => s.relations.filter(r => r.type === t).reduce((a, r) => a + r.n, 0);
+    const docs = s.documents.reduce((a, d) => a + d.n, 0);
+    const grounded = f.n ? Math.round(100 * (f.n - (f.unverified || 0)) / f.n) : 0;
+    $('#hstats').innerHTML = `<span class="pill"><b>${docs}</b>docs</span><span class="pill"><b>${(f.n || 0).toLocaleString()}</b>facts</span><span class="pill ok"><b>${grounded}%</b>grounded</span><span class="pill ok"><b>${rel('corroborates')}</b>corroborate</span><span class="pill bad"><b>${rel('contradicts')}</b>contradict</span><span class="pill warn"><b>${rel('reconciled').toLocaleString()}</b>reconciled</span>`;
+  } catch (e) { /* server starting */ }
+}
 
 // ---- tabs ----
 $$('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -133,6 +162,7 @@ function showTab(name) {
   $$('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $$('main > section').forEach(s => s.hidden = s.id !== 'tab-' + name);
   location.hash = name;
+  loadHeaderStats();
   ({documents: loadDocs, facts: loadFacts, relations: loadRels, showcase: loadShowcase, stats: loadStats})[name]?.();
 }
 
@@ -160,7 +190,7 @@ async function loadDocs() {
     const st = d.status === 'done' ? 'ok' : d.status === 'failed' ? 'bad' : 'accent';
     return `<div class="card" style="margin-bottom:10px">
       <div class="row" style="justify-content:space-between">
-        <div><b>${esc(docLabel(d))}</b> <span class="muted mono">${esc(d.filename)} · ${d.page_count} pages · id ${d.id}</span></div>
+        <div><span class="dot" style="background:${docColor(d.id)}"></span><b>${esc(docLabel(d))}</b> <span class="muted mono">${esc(d.filename)} · ${d.page_count} pages · id ${d.id}</span></div>
         <div><span class="pill ${st}">${d.status}</span> ${busy ? '' : `<button class="ghost" onclick="delDoc('${d.id}')">remove</button>`}</div>
       </div>
       <div class="muted" style="margin-top:6px">${esc(m.publisher || '')} ${m.doc_type ? '· ' + esc(m.doc_type) : ''} ${m.publication_date ? '· published ' + esc(m.publication_date) : ''} ${m.period_covered_start ? '· covers ' + esc(m.period_covered_start) + ' → ' + esc(m.period_covered_end) : ''}</div>
@@ -178,7 +208,7 @@ async function loadDocs() {
       ${(m.warnings || []).map(w => `<div class="pill warn">${esc(w)}</div>`).join('')}
     </div>`;
   }).join('');
-  if (documents.some(d => ['queued', 'extracting', 'linking'].includes(d.status))) setTimeout(() => { if (!$('#tab-documents').hidden) loadDocs(); }, 2500);
+  if (documents.some(d => ['queued', 'extracting', 'linking'].includes(d.status))) setTimeout(() => { if (!$('#tab-documents').hidden) { loadDocs(); loadHeaderStats(); } }, 2500);
 }
 async function delDoc(id) { if (!confirm('Remove this document and all its facts/relations?')) return; await api('/api/documents/' + id, { method: 'DELETE' }); loadDocs(); }
 
@@ -202,9 +232,9 @@ async function loadFacts() {
   const { total, facts } = await api('/api/facts?' + p);
   $('#fcount').textContent = `${facts.length} of ${total}`;
   $('#ftable tbody').innerHTML = facts.map(f => `<tr class="clickable" onclick="openFact('${f.id}')">
-    <td><div class="doc" style="color:var(--accent)">${esc((f.doc_title || f.doc_filename).slice(0, 40))}</div><span class="muted">p.${f.page_no}</span></td>
+    <td><div class="doc" style="color:${docColor(f.doc_id)}">${esc((f.doc_title || f.doc_filename).slice(0, 40))}</div><span class="muted">p.${f.page_no}</span></td>
     <td>${esc(f.subject)}</td><td>${esc(f.attribute)}</td><td>${valueOf(f)}</td><td>${periodOf(f)}</td>
-    <td class="muted">${esc([f.basis, f.scope].filter(Boolean).join(' · '))}</td><td>${groundPill(f)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">no facts match</td></tr>';
+    <td class="muted">${esc([f.basis, f.scope].filter(Boolean).join(' · '))}</td><td>${groundPill(f)}</td><td><span class="badge ${f.rel_count ? '' : 'zero'}">${f.rel_count || 0}</span></td></tr>`).join('') || '<tr><td colspan="8" class="empty">no facts match</td></tr>';
 }
 
 // ---- fact modal with highlighted evidence ----
@@ -226,15 +256,35 @@ async function openFact(id) {
       <div><h2 style="margin-top:0">Page ${f.page_no} text <small>quote highlighted${f.grounding === 'fuzzy' ? ' (fuzzy match, score ' + Math.round(f.grounding_score) + ')' : f.grounding === 'window' ? ' (tokens found, not contiguous — highlighted window)' : f.grounding === 'unverified' ? ' — NOT FOUND on this page' : ''}</small> <a class="muted" style="font-size:12px" target="_blank" href="/api/documents/${f.doc_id}/pdf#page=${f.page_no}">open PDF ↗</a></h2>
         <pre class="page" id="pagetext">${highlight(f.page_text, f.quote_start, f.quote_end, f.quote)}</pre></div>
       <div><h2 style="margin-top:0">Relations <small>${f.relations.length}</small></h2>${f.relations.map(r => relCard(r, f.id)).join('') || '<div class="empty">no cross-document relations for this fact</div>'}</div>
-    </div>`;
+    </div>
+    <h2 id="timeline">Timeline <small>every "${esc(f.attribute)}"-type fact across documents and periods, plus everything linked to this one</small></h2>
+    <div id="tlbody" class="muted">loading…</div>`;
   modal.classList.add('open');
   const m = $('#pagetext mark'); if (m) m.scrollIntoView({ block: 'center' });
+  loadTimeline(f.id);
+}
+function relPill(r) {
+  if (!r) return '<span class="muted">—</span>';
+  const cls = r.type === 'corroborates' ? 'ok' : r.type === 'contradicts' ? 'bad' : 'warn';
+  return `<span class="pill ${cls}">${r.type}${r.reconciliation ? ' · ' + esc(r.reconciliation) : ''}</span>`;
+}
+async function loadTimeline(id) {
+  const t = await api(`/api/facts/${id}/timeline`);
+  const rows = t.facts;
+  const docsUsed = [...new Set(rows.map(r => r.doc_id))];
+  $('#tlbody').innerHTML = `<div class="legend">${docsUsed.map(d => { const f = rows.find(r => r.doc_id === d); return `<span><span class="dot" style="background:${docColor(d)}"></span>${esc((f.doc_title || f.doc_filename).slice(0, 60))}${f.doc_date ? ' (' + esc(f.doc_date) + ')' : ''}</span>`; }).join('')}</div>
+    <div class="card" style="padding:0"><table class="tl"><thead><tr><th>Period</th><th>Value</th><th>Subject · attribute</th><th>Basis / scope</th><th>Document · page</th><th>Relation to this fact</th></tr></thead><tbody>
+    ${rows.map(r => `<tr class="clickable ${r.is_anchor ? 'anchor' : ''}" onclick="openFact('${r.id}')">
+      <td>${esc(r.period_label || '—')}${r.period_start ? `<div class="muted mono">${esc(r.period_start)} → ${esc(r.period_end)}</div>` : ''}</td>
+      <td class="val">${valueOf(r)}</td><td>${esc(r.subject)} · ${esc(r.attribute)}</td><td class="muted">${esc([r.basis, r.scope].filter(Boolean).join(' · '))}</td>
+      <td><span class="dot" style="background:${docColor(r.doc_id)}"></span>${esc((r.doc_title || r.doc_filename).slice(0, 36))} <span class="muted">p.${r.page_no}</span></td>
+      <td>${r.is_anchor ? '<span class="pill accent">this fact</span>' : relPill(r.relation)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 // ---- relations ----
 function factBox(f) {
-  return `<div class="fact clickable" onclick="openFact('${f.id}')" style="cursor:pointer">
-    <div class="doc">${esc(f.doc_title || f.doc_filename)} <span class="muted">· p.${f.page_no}${f.doc_date ? ' · ' + esc(f.doc_date) : ''}</span></div>
+  return `<div class="fact clickable" onclick="openFact('${f.id}')" style="cursor:pointer;border-left-color:${docColor(f.doc_id)}">
+    <div class="doc" style="color:${docColor(f.doc_id)}">${esc(f.doc_title || f.doc_filename)} <span class="muted">· p.${f.page_no}${f.doc_date ? ' · ' + esc(f.doc_date) : ''}</span></div>
     <div class="attr">${esc(f.subject)} · ${esc(f.attribute)}</div>
     <div class="val">${valueOf(f)}</div>
     <div class="muted" style="font-size:12px">${esc(f.period_label || '—')} ${f.period_start ? `(${esc(f.period_start)} → ${esc(f.period_end)})` : ''} ${f.basis ? '· ' + esc(f.basis) : ''} ${f.scope ? '· ' + esc(f.scope) : ''}</div>
@@ -249,7 +299,15 @@ function relCard(r) {
 }
 $('#rgo').onclick = () => loadRels();
 $('#rq').onkeydown = e => { if (e.key === 'Enter') loadRels(); };
+async function loadRelChips() {
+  const s = await api('/api/stats');
+  const count = t => s.relations.filter(r => r.type === t).reduce((a, r) => a + r.n, 0);
+  const cur = $('#rtype').value;
+  $('#rchips').innerHTML = [['', 'all'], ['corroborates', 'corroborates'], ['contradicts', 'contradicts'], ['reconciled', 'reconciled'], ['unrelated', 'rejected as unrelated']]
+    .map(([v, label]) => `<button class="chip ${v} ${cur === v ? 'active' : ''}" onclick="$('#rtype').value='${v}'; loadRels()">${label}<b>${v ? count(v) : (count('corroborates') + count('contradicts') + count('reconciled')).toLocaleString()}</b></button>`).join('');
+}
 async function loadRels() {
+  loadRelChips();
   const p = new URLSearchParams({ limit: 100 });
   for (const [id, k] of [['#rtype', 'type'], ['#rrec', 'reconciliation'], ['#rdoc', 'doc_id'], ['#rmethod', 'method'], ['#rq', 'q']]) { const v = $(id).value.trim(); if (v) p.set(k, v); }
   const { total, relations } = await api('/api/relations?' + p);
@@ -294,6 +352,7 @@ async function loadStats() {
     ${s.llm.map(r => `<tr><td>${esc(r.purpose)}</td><td class="mono">${esc(r.model || '')}</td><td>${r.calls}</td><td>${r.ok}</td><td>${r.avg_s}</td><td>${r.input_tokens ?? ''}</td><td>${r.output_tokens ?? ''}</td><td>${r.usd ?? ''}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
+loadHeaderStats();
 showTab(location.hash.replace('#', '') || 'documents');
 window.addEventListener('hashchange', () => showTab(location.hash.replace('#', '') || 'documents'));
 </script>
