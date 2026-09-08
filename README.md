@@ -7,8 +7,9 @@ unit or data vintage — with the reasoning written out so a reader can check it
 Built for the Superjoin VIT 2026 engineering-intern assignment. Runs locally: Python, SQLite, a small vanilla-JS UI,
 and an LLM behind a one-function interface.
 
-> **Video demo (2:44):** https://drive.google.com/file/d/1P8CNzGcmNfzRZ-lUGKJbPrHYcKjzBt5B/view — a never-seen PDF being
-> uploaded and processed live, the evidence view, the four required cases, and the new document's relations.
+> **Video demo (2:52):** https://drive.google.com/file/d/1P8CNzGcmNfzRZ-lUGKJbPrHYcKjzBt5B/view — a never-seen PDF being
+> uploaded and processed live, the evidence view with the attribute timeline, the four required cases, and the new
+> document's relations.
 > The same file is in the repo at [`docs/demo/demo.mp4`](docs/demo/demo.mp4). It is a scripted screen capture with
 > on-screen captions instead of narration (`docs/record_demo.py` drives the real UI with Playwright; nothing is mocked).
 
