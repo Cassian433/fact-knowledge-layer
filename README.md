@@ -51,8 +51,9 @@ knows which one is running. Two model tiers are used: `FACTLAYER_MODEL_FAST` for
 `FACTLAYER_MODEL_SMART` for cross-document judgement (default Opus). Every call is logged to the `llm_calls` table with
 latency and reported cost — visible on the **Stats** tab.
 
-Other knobs (all optional, via env or `.env`): `FACTLAYER_LLM_CONCURRENCY` (default 6), `FACTLAYER_CHUNK_CHARS`
-(18 000), `FACTLAYER_MAX_FACTS_PER_CHUNK` (40), `FACTLAYER_SIM_THRESHOLD` (0.82), `FACTLAYER_NUMERIC_TOLERANCE` (0.01).
+Other knobs (all optional, via env or `.env`): `FACTLAYER_LLM_CONCURRENCY` (default 8; the run below used 12),
+`FACTLAYER_CHUNK_CHARS` (18 000), `FACTLAYER_MAX_FACTS_PER_CHUNK` (40), `FACTLAYER_SIM_THRESHOLD` (0.86),
+`FACTLAYER_MAX_NEIGHBOURS` (5), `FACTLAYER_NUMERIC_TOLERANCE` (0.01).
 
 ### API
 
@@ -108,7 +109,7 @@ PDF ──PyMuPDF──▶ page texts ──▶ page-anchored chunks (~18k chars
       ├─▶ 5. embeddings (local) of "subject | attribute" for candidate matching
       │
       └─▶ 6. linking against every fact already in the layer (incremental — earlier documents are not reprocessed)
-              a. candidates: same attribute slug OR cosine ≥ 0.82, same kind, other documents only, ≤ 8 per fact
+              a. candidates: same attribute slug OR cosine ≥ 0.86, same kind, other documents only, ≤ 5 per fact
               b. deterministic judge: identical unit + period + basis + scope → arithmetic decides "corroborates"
               c. LLM judge (smart tier): groups of candidates with both documents' metadata → corroborates /
                  contradicts / reconciled(kind) / unrelated, with 2–4 sentences of reasoning per pair
@@ -167,11 +168,134 @@ the rest.
 
 _Filled in from the actual run — see the Showcase tab for the live version._
 
-{{RESULTS}}
+Six starter PDFs (Delhivery prospectus 2022, annual report FY24, Q4 FY24 deck; Economic Survey 2024-25, RBI Annual
+Report 2024-25, IMF 2025 Article IV — 511 pages) processed with the `claude_cli` backend, Sonnet for extraction and Opus
+for judgement, concurrency 12.
+
+| | |
+|---|---|
+| facts | **3,702** (2,680 numeric, 1,022 statements) |
+| evidence grounding | **3,194 exact** (86 %) · 230 fuzzy · 185 token-window · **93 unverified (2.5 %)** |
+| verification flags | 42 page numbers corrected · 61 numbers not found in their own quote · 67 low model confidence |
+| relations (cross-document) | **281 corroborate** (3 by arithmetic) · **4 contradict** · **2,009 reconciled** · 1,793 candidate pairs rejected as *unrelated* |
+| reconciliation kinds | period 1,477 · scope 270 · definition 179 · vintage 55 · unit 17 · estimate-vs-actual 8 · rounding 2 |
+| model calls | 108 extraction (avg 90 s) · 146 judgement (avg 97 s) · 7 metadata — all succeeded |
+| wall time per document | deck 4 min · Economic Survey 4 min · RBI 9.5 min · IMF 11 min · prospectus 12 min · annual report ~20 min |
+
+![documents](docs/screenshots/documents.png)
+
+**Unseen document test.** After the six starter PDFs, I uploaded Delhivery's 3-page Q4 FY25 results press release
+(May 2025, [public](https://www.delhivery.com/uploads/2025/05/PressRelease_Q4FY25.pdf), not in the starter set). In 3.5
+minutes it produced 40 facts (all grounded) and 153 relations: its FY24 comparatives — *"Rs. 8,142 Cr in FY24"*,
+*"a loss of Rs. 249 Cr in FY24"*, *"Rs. 2,076 Cr in Q4 FY24"* — corroborated the annual report and the deck (three of
+them by arithmetic alone), its FY25 figures were reconciled to the FY24 ones by period, and 25 loose candidates were
+rejected. This is the document used for the live-upload part of the video.
+
+Grounding was 12.7 % unverified after the first full run. Inspecting the failures showed the quotes were right and the
+*page text* was wrong: PyMuPDF's geometric sort interleaves the two columns of a typeset report line by line. Switching
+to the PDF's native content order and re-running verification (`reground --reextract`, no model calls) took it to 2.5 %.
+That loop — extract, verify, look at what failed, fix the deterministic part — is the workflow this system is built for.
+
 
 ## The four cases
 
-{{CASES}}
+Everything below is taken from the **Showcase** tab (`/api/showcase`), which ranks the relations table; nothing is
+hand-picked in code. Fact ids are clickable in the UI to see the quote highlighted on its page.
+
+### Case 1 — corroborated across documents, expressed differently
+
+![case 1](docs/screenshots/showcase-case1.png)
+
+- **Same number, different unit and scale.** Annual report p.36: *"Revenues from customers increased by 12.68% to
+  ₹81,415.38 million for FY24"* ↔ Q4 FY24 deck p.23: *"Total revenue from customers 1,860 2,194 2,076 7,225 8,142"*
+  (₹ crore). Judge: *"₹81,415.38 million = ₹8,141.54 crore, which rounds to ₹8,142 crore — the same figure at
+  presentation precision for the identical period 1 Apr 2023–31 Mar 2024."* → **corroborates**, 0.97.
+- **Same event, different description.** Prospectus p.14: *"18,718,670 equity shares of ₹10 each were split into
+  187,186,700 Equity Shares of ₹1 each"* ↔ annual report p.44: *"sub-division … 1 equity share of ₹10/- each to 10 equity
+  shares of ₹1/- each vide a resolution passed at the annual general meeting dated September 29, 2021"*. Judge: identical
+  10:1 ratio, identical date, counts exactly 10×. → 0.96.
+- **Same place, different spelling.** Registered office *"…Indira Gandhi International Airport, New Delhi 110037"*
+  (prospectus) ↔ *"…IGI Airport, New Delhi 110037"* (annual report). → 0.97.
+- **Settled without a model.** IMF p.3 *"6.5 percent"* real GDP growth FY2024/25 ↔ RBI p.22 *"6.5 per cent"* 2024-25:
+  same attribute slug, same ISO period, same unit → `method = deterministic`. Same for foreign-exchange reserves
+  US$ 668 bn ↔ US$ 668.3 bn at end-March 2025 (0.04 % apart).
+
+### Case 2 — a genuine (or likely) contradiction
+
+![case 2](docs/screenshots/showcase-case2.png)
+
+- **PIN code of the corporate office.** Prospectus p.30 and p.68: *"Plot 5, Sector 44, Gurugram- 122002, Haryana"*
+  ↔ annual report p.51 (BRSR section): *"Corporate address Plot No. 5, Sector 44, Gurugram, Haryana 122001"*.
+  Judge: *"The street address is identical and no relocation is claimed, so the PIN codes genuinely disagree. Note the
+  disagreement is also internal to D2 — its pages 30, 31 and 47 all say 122002 — which points to a typographical error on
+  page 51; confirming against the company's filed MCA/CIN record would settle it."* → **contradicts**, 0.62. This is a
+  real inconsistency inside a filed document, found by comparing two documents.
+- **Share-based payment expense, FY24.** Deck p.23 adds back *"Share based payment expenses … 226"* (₹ crore) to EBITDA ↔
+  annual report p.86 *"Share Based Payment Expense (equity settled- ESOP) … 2,219.38"* (₹ million = ₹221.94 crore).
+  Judge: 1.8 % gap is too large for rounding at crore precision, the FY23 figures match exactly (289), *"so the same
+  definition appears to be in use and the FY24 gap is unexplained. To resolve, I would check whether D1's add-back
+  includes cash-settled/SAR or non-employee share-based payments booked outside D2's employee-benefits ESOP line."*
+  → **contradicts**, 0.55 — a *likely* contradiction with an explicit hypothesis for how it might reconcile.
+
+Only four contradictions survived out of ~4,100 judged pairs; the judge is deliberately conservative and prefers
+"reconciled" with a stated reason when the documents supply one.
+
+### Case 3 — an apparent contradiction explained by context
+
+![case 3](docs/screenshots/showcase-case3.png)
+
+- **Vintage.** Economic Survey (31 Jan 2025) p.14: real GDP growth FY25 *"estimated to be 6.4 per cent"* (First
+  Advance Estimates) ↔ IMF (Nov 2025) p.3: *"6.5 percent"*. Judge: *"The 0.1pp gap is the pre-actual FAE versus the
+  later realized figure, not a disagreement."* → **reconciled / vintage**, 0.90.
+- **Definition.** RBI p.18: gross fiscal deficit target *"4.4 per cent of GDP in 2025-26 (BE)"* ↔ IMF p.15: *"4.5
+  percent of GDP"*. Judge: *"D3's own parenthetical resolves the gap: '4.4 percent of GDP (4.5 percent of GDP, IMF
+  definition)'."* → **reconciled / definition**, 0.93.
+- **Scope.** Annual report p.85: Express Parcel revenue *"50,765.87"* ₹ mn ↔ deck p.6: *"₹8,142 Cr FY24 revenue from
+  services"*. Judge: segment vs total for the same period; the segment lines sum toward the 81,415.38 mn total.
+  → **reconciled / scope**, 0.93.
+- **Unit.** RBI: current account deficit *"US$ 37.1 billion"* (Apr–Dec 2024) ↔ IMF: *"0.2 percent of GDP"* (2025Q2).
+  → **reconciled / unit** (and period), 0.82.
+- **Period.** Deck: *"₹2,076 Cr Q4 FY24 revenue from services"* ↔ annual report: *"₹81,415Mn"* FY24 — *"the quarter is
+  a component of the year — D1's own table shows 1,860/2,194/2,076 quarters against the 8,142 annual total"*.
+  → **reconciled / period**, 0.92. Period is by far the most common reconciliation (1,477 of 2,009): three Delhivery
+  filings four fiscal years apart, and macro reports mixing fiscal, calendar and quarterly windows.
+- **Estimate vs actual.** Global growth 2024: *"3.2 per cent"* (Economic Survey citing the IMF projection) ↔
+  *"3.3 per cent"* (RBI citing WEO April 2025 outturn). → 0.85.
+
+### Case 4 — extraction and reasoning failures, and what was done about them
+
+![case 4](docs/screenshots/showcase-case4.png)
+
+1. **Two-column interleaving (fixed).** The biggest failure by count: 469 correct quotes could not be found because
+   the extractor's geometric sort merged the two columns of the RBI and Delhivery annual reports line by line —
+   e.g. p.70 of the RBI report reads *"…grants-in-aid to states II.6.4 Capital expenditure undershot the BE by / declined
+   to 1.6 per cent of GDP from 1.8 per cent ₹92,682 crore and was placed at 3.1 per cent…"*. Diagnosed from the
+   Showcase failure list, fixed by using the PDF's native content order, verified by re-grounding: 469 → 93 unverified.
+2. **Slide tiles (handled).** KPI tiles on the earnings deck put all values on one line and all labels on the next, so a
+   quote like *"₹8,142 Cr / FY24 revenue from services"* is right but not contiguous. A token-window tier accepts it
+   (all numbers present, ≥ 80 % of tokens within 800 chars), labels it `window`, and flags `quote_not_contiguous`
+   instead of either dropping a good fact or pretending the quote was exact. 185 facts are grounded this way.
+3. **Condensed list quotes (flagged, not fixed).** For list-like facts the model sometimes joins the items — *"Kotak
+   Mahindra Capital Company Limited, Morgan Stanley India Company Private Limited, BofA Securities India Limited,
+   Citigroup…"* — into one "quote" that never appears verbatim because other text sits between the names. These are the
+   bulk of the remaining 93 unverified facts. Next step: allow several short verbatim spans per fact instead of one.
+4. **Numbers read off a chart (caught by the judge).** From the deck's receivable-days chart the extractor produced a
+   fact from the number row *"106 87 77 74 66"*; comparing it with the annual report's *"from 77 days a year ago"*, the
+   judge worked out that the alignment puts 74 at March 2023 and 77 at March 2022, called it a contradiction at
+   confidence 0.50 and said it would *"check the actual axis labels/legend of the D1 slide 16 chart, since the value is
+   read from an OCR'd number row"*. Low confidence plus an explicit verification step is the right output here.
+5. **Wrong page numbers (corrected).** 42 facts cited a neighbouring page; grounding located the quote on the right
+   page and flagged `page_corrected:8->7`.
+6. **Pre-scaled numbers (flagged).** 61 numeric facts have a `value_num` that does not appear in their own quote —
+   typically the model multiplied *"₹2.0 lakh crore"* into `200000` while also setting `scale`, or wrote *"five"*.
+   They are shown with a `value_not_in_quote` flag and excluded from the arithmetic judge.
+7. **False candidates (the cost of recall).** 1,793 of the ~4,100 pairs sent to the judge came back *unrelated* —
+   *"Only the word 'freight' is shared"* — because candidate generation is deliberately loose (cosine ≥ 0.86 on short
+   strings). They cost model time, not correctness; they are listed on the Showcase tab.
+8. **The arithmetic judge rarely fires (3 of 284 corroborations).** Publishers word the same attribute differently
+   ("Revenue from services" vs "Revenue from contracts with customers"), so the exact-slug precondition seldom holds.
+   Canonical attribute names (see Next steps) would move many pairs from the model to arithmetic.
+
 
 ---
 
@@ -185,17 +309,18 @@ _Filled in from the actual run — see the Showcase tab for the live version._
   model) feeding a table-aware prompt is the obvious next step.
 - **Candidate recall is bounded by embeddings on `subject | attribute`.** "Revenue from services" and "Revenue from
   operations" match (0.93); "Gross fiscal deficit" and "Fiscal balance" do — but a fact described as "net loss" in one
-  document and "loss for the year" in another can sit below the 0.82 threshold. Lowering the threshold trades model
-  calls for recall; a better fix is a learned or LLM-produced canonical attribute name per fact.
+  document and "loss for the year" in another can sit below the 0.86 threshold (I raised it from 0.82 mid-run because
+  57 % of judged pairs were coming back *unrelated*). Lowering the threshold trades model calls for recall; a better fix
+  is a canonical attribute name per fact.
 - **Judgement is per group, not global.** Each group is a new fact plus ≤ 9 candidates. Chains ("A corroborates B,
   B contradicts C") are visible in the UI but never reasoned about together; the next step is clustering into
   per-attribute timelines (all values of "Revenue from operations" across periods and documents) and judging the
   timeline as one object, which also gives an obvious place for revision tracking.
 - **Statements are compared more loosely than numbers.** Non-numeric facts (roles, addresses) have no deterministic
   judge and depend entirely on the model; the false-match filter ("unrelated") works but adds model calls.
-- **Throughput.** With the CLI backend each extraction call is a subprocess and ~60–100 s for an 18k-char chunk;
-  a 100-page report takes ~10 minutes at concurrency 8. The SDK backend with prompt caching and Batch API would
-  be several times cheaper and faster for bulk ingestion.
+- **Throughput.** With the CLI backend each extraction call is a subprocess and ~90 s for an 18k-char chunk, each
+  judgement batch ~100 s; a 100-page report takes 10–20 minutes at concurrency 12. The SDK backend with prompt caching
+  and the Batch API would be several times cheaper and faster for bulk ingestion.
 - **No OCR, no images.** Charts on slides are invisible to the system; scanned pages are flagged, not read.
 
 **Next**

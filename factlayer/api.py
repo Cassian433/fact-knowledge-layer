@@ -214,13 +214,10 @@ def showcase() -> dict[str, Any]:
                         "(fa.scale<>fb.scale OR fa.unit<>fb.unit) DESC, (fa.value_text<>fb.value_text OR fa.attribute<>fb.attribute) DESC, "
                         "(fa.kind='statement') DESC, r.confidence DESC", 12)
     contradictions = pick("r.type='contradicts'", "r.confidence DESC", 12)
-    reconciled = pick("r.type='reconciled'", "r.confidence DESC", 40)
-    # one best example per reconciliation kind first, then the rest
-    seen, ordered = set(), []
-    for r in reconciled:
-        if r["reconciliation"] not in seen:
-            seen.add(r["reconciliation"]); ordered.append(r)
-    ordered += [r for r in reconciled if r not in ordered]
+    # the best two examples of each reconciliation kind, least obvious kinds first (period differences are the common case)
+    ordered: list[dict[str, Any]] = []
+    for kind in ("vintage", "definition", "scope", "unit", "estimate_vs_actual", "rounding", "period", "other"):
+        ordered += pick(f"r.type='reconciled' AND r.reconciliation='{kind}'", "r.confidence DESC", 2)
     failures = {
         "quote_not_found": db.q(f"SELECT {FACT_COLS} FROM facts f JOIN documents d ON d.id=f.doc_id WHERE f.grounding='unverified' ORDER BY f.confidence DESC LIMIT 15"),
         "value_not_in_quote": db.q(f"SELECT {FACT_COLS} FROM facts f JOIN documents d ON d.id=f.doc_id WHERE f.flags LIKE '%value_not_in_quote%' LIMIT 15"),

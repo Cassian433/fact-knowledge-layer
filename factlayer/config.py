@@ -18,7 +18,7 @@ LLM_BACKEND = os.getenv("FACTLAYER_LLM_BACKEND", "claude_cli")
 # Two tiers: "fast" does bulk extraction, "smart" does cross-document reasoning.
 MODEL_FAST = os.getenv("FACTLAYER_MODEL_FAST", "sonnet" if LLM_BACKEND == "claude_cli" else "claude-sonnet-5")
 MODEL_SMART = os.getenv("FACTLAYER_MODEL_SMART", "opus" if LLM_BACKEND == "claude_cli" else "claude-opus-5")
-LLM_CONCURRENCY = int(os.getenv("FACTLAYER_LLM_CONCURRENCY", "6"))
+LLM_CONCURRENCY = int(os.getenv("FACTLAYER_LLM_CONCURRENCY", "8"))
 LLM_TIMEOUT_S = int(os.getenv("FACTLAYER_LLM_TIMEOUT_S", "900"))
 
 # Chunking: consecutive pages are packed until this many characters.
@@ -27,8 +27,8 @@ MAX_FACTS_PER_CHUNK = int(os.getenv("FACTLAYER_MAX_FACTS_PER_CHUNK", "40"))
 
 # Linking
 EMBED_MODEL = os.getenv("FACTLAYER_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
-SIM_THRESHOLD = float(os.getenv("FACTLAYER_SIM_THRESHOLD", "0.82"))
-MAX_NEIGHBOURS = int(os.getenv("FACTLAYER_MAX_NEIGHBOURS", "8"))
+SIM_THRESHOLD = float(os.getenv("FACTLAYER_SIM_THRESHOLD", "0.86"))
+MAX_NEIGHBOURS = int(os.getenv("FACTLAYER_MAX_NEIGHBOURS", "5"))
 MAX_CLUSTER = int(os.getenv("FACTLAYER_MAX_CLUSTER", "10"))
 NUMERIC_TOLERANCE = float(os.getenv("FACTLAYER_NUMERIC_TOLERANCE", "0.01"))  # 1 % => same number
 

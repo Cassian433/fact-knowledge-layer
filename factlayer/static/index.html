@@ -295,6 +295,7 @@ async function loadStats() {
 }
 
 showTab(location.hash.replace('#', '') || 'documents');
+window.addEventListener('hashchange', () => showTab(location.hash.replace('#', '') || 'documents'));
 </script>
 </body>
 </html>
