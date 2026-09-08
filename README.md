@@ -16,7 +16,7 @@ and an LLM behind a one-function interface.
 Requirements: Python 3.12+, [`uv`](https://docs.astral.sh/uv/), and an LLM backend (see below).
 
 ```bash
-git clone <this repo> && cd factlayer
+git clone https://github.com/Cassian433/fact-knowledge-layer.git && cd fact-knowledge-layer
 uv sync                                   # installs everything into .venv (PyMuPDF, FastAPI, fastembed, anthropic ...)
 
 # choose ONE backend (see "LLM backend" below)
