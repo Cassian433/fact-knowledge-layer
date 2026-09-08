@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fact Knowledge Layer</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --text:#e6e8ee; --muted:#8b93a7; --accent:#5b9cff;
+          --ok:#3ccf91; --bad:#ff6b6b; --warn:#ffb347; --info:#b48cff; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { display:flex; align-items:center; gap:18px; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.2px; }
+  header h1 span { color:var(--muted); font-weight:400; }
+  nav { display:flex; gap:4px; }
+  nav button { background:transparent; border:1px solid transparent; color:var(--muted); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:13px; }
+  nav button.active { color:var(--text); background:#212633; border-color:var(--line); }
+  main { padding:18px 20px 60px; max-width:1400px; margin:0 auto; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .muted { color:var(--muted); }
+  .mono { font-family:var(--mono); font-size:12px; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; border:1px solid var(--line); color:var(--muted); margin-right:4px; white-space:nowrap; }
+  .pill.ok { color:var(--ok); border-color:rgba(60,207,145,.4); }
+  .pill.bad { color:var(--bad); border-color:rgba(255,107,107,.4); }
+  .pill.warn { color:var(--warn); border-color:rgba(255,179,71,.4); }
+  .pill.info { color:var(--info); border-color:rgba(180,140,255,.4); }
+  .pill.accent { color:var(--accent); border-color:rgba(91,156,255,.4); }
+  input[type=text], select { background:#0d0f14; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:7px 10px; font-size:13px; }
+  input[type=text] { min-width:260px; }
+  button.primary { background:var(--accent); color:#06101f; border:0; border-radius:6px; padding:8px 14px; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; }
+  button.ghost:hover { color:var(--text); }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.4px; }
+  tr.clickable { cursor:pointer; } tr.clickable:hover { background:#1c2029; }
+  .drop { border:1px dashed #3a4152; border-radius:10px; padding:22px; text-align:center; color:var(--muted); cursor:pointer; }
+  .drop.over { border-color:var(--accent); color:var(--text); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns:1fr; } }
+  .rel { margin-bottom:14px; }
+  .rel .head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+  .rel .type { font-weight:600; font-size:13px; text-transform:uppercase; letter-spacing:.5px; }
+  .rel.corroborates .type { color:var(--ok); } .rel.contradicts .type { color:var(--bad); } .rel.reconciled .type { color:var(--warn); } .rel.unrelated .type { color:var(--muted); }
+  .fact { background:#0d0f14; border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .fact .doc { color:var(--accent); font-size:12px; margin-bottom:4px; }
+  .fact .val { font-size:16px; font-weight:600; margin:2px 0; }
+  .fact .attr { color:var(--muted); font-size:12px; }
+  blockquote { margin:8px 0 0; padding:8px 10px; border-left:3px solid #3a4152; color:#c7ccd8; font-size:12.5px; background:#11141a; border-radius:0 6px 6px 0; white-space:pre-wrap; }
+  .reason { margin-top:10px; padding:10px 12px; background:#11141a; border-radius:8px; font-size:13px; }
+  .reason b { color:var(--muted); font-weight:500; }
+  pre.page { white-space:pre-wrap; font-family:var(--mono); font-size:12px; line-height:1.5; background:#0d0f14; border:1px solid var(--line); border-radius:8px; padding:12px; max-height:60vh; overflow:auto; }
+  mark { background:rgba(255,179,71,.35); color:inherit; border-radius:2px; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-start; justify-content:center; padding:40px 16px; overflow:auto; z-index:20; }
+  .modal.open { display:flex; }
+  .modal .card { width:min(1100px, 100%); }
+  .kv { display:grid; grid-template-columns:160px 1fr; gap:4px 12px; font-size:13px; }
+  .kv div:nth-child(odd) { color:var(--muted); }
+  h2 { font-size:15px; margin:18px 0 10px; font-weight:600; }
+  h2 small { color:var(--muted); font-weight:400; margin-left:8px; }
+  .progress { height:4px; background:#262b36; border-radius:2px; overflow:hidden; margin-top:6px; }
+  .progress i { display:block; height:100%; background:var(--accent); width:30%; animation:slide 1.4s infinite; }
+  @keyframes slide { 0%{transform:translateX(-100%)} 100%{transform:translateX(400%)} }
+  .stat { font-size:22px; font-weight:600; } .stat small { font-size:12px; color:var(--muted); font-weight:400; display:block; }
+  .empty { color:var(--muted); padding:30px; text-align:center; }
+  details summary { cursor:pointer; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Fact Knowledge Layer <span>· facts, evidence, cross-document reasoning</span></h1>
+  <nav>
+    <button data-tab="documents" class="active">Documents</button>
+    <button data-tab="facts">Facts</button>
+    <button data-tab="relations">Relations</button>
+    <button data-tab="showcase">Showcase</button>
+    <button data-tab="stats">Stats</button>
+  </nav>
+</header>
+<main>
+  <section id="tab-documents">
+    <div class="drop" id="drop">Drop PDFs here or click to upload — each file is processed in the background and linked against everything already in the layer.<input type="file" id="file" accept="application/pdf" multiple hidden></div>
+    <div id="docs" style="margin-top:14px"></div>
+  </section>
+
+  <section id="tab-facts" hidden>
+    <div class="row" style="margin-bottom:12px">
+      <input type="text" id="fq" placeholder="search subject / attribute / value / quote">
+      <select id="fdoc"><option value="">all documents</option></select>
+      <select id="fkind"><option value="">numeric + statements</option><option value="numeric">numeric</option><option value="statement">statements</option></select>
+      <select id="fground"><option value="">any grounding</option><option value="exact">exact</option><option value="fuzzy">fuzzy</option><option value="window">window (non-contiguous)</option><option value="unverified">unverified</option></select>
+      <select id="fflag"><option value="">flagged or not</option><option value="true">flagged only</option><option value="false">clean only</option></select>
+      <button class="primary" id="fgo">Search</button>
+      <span class="muted" id="fcount"></span>
+    </div>
+    <div class="card" style="padding:0"><table id="ftable"><thead><tr><th>Doc · page</th><th>Subject</th><th>Attribute</th><th>Value</th><th>Period</th><th>Basis / scope</th><th>Grounding</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section id="tab-relations" hidden>
+    <div class="row" style="margin-bottom:12px">
+      <select id="rtype"><option value="">all types</option><option value="corroborates">corroborates</option><option value="contradicts">contradicts</option><option value="reconciled">reconciled</option><option value="unrelated">unrelated (false matches)</option></select>
+      <select id="rrec"><option value="">any reconciliation</option><option>period</option><option>scope</option><option>unit</option><option>rounding</option><option>vintage</option><option>estimate_vs_actual</option><option>definition</option><option>other</option></select>
+      <select id="rdoc"><option value="">all documents</option></select>
+      <select id="rmethod"><option value="">llm + deterministic</option><option value="llm">llm</option><option value="deterministic">deterministic</option></select>
+      <input type="text" id="rq" placeholder="search attribute / reasoning">
+      <button class="primary" id="rgo">Filter</button>
+      <span class="muted" id="rcount"></span>
+    </div>
+    <div id="rels"></div>
+  </section>
+
+  <section id="tab-showcase" hidden>
+    <p class="muted">Auto-selected examples for the four required cases, ranked by confidence and grounding. Every card shows both quotes and the system's reasoning; click a fact to see it highlighted on its page.</p>
+    <div id="show"></div>
+  </section>
+
+  <section id="tab-stats" hidden><div id="stats"></div></section>
+</main>
+
+<div class="modal" id="modal"><div class="card" id="modal-body"></div></div>
+
+<script>
+const $ = (s, el=document) => el.querySelector(s);
+const $$ = (s, el=document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const api = async (p, opts) => { const r = await fetch(p, opts); if (!r.ok) throw new Error(await r.text()); return r.json(); };
+let DOCS = [];
+
+// ---- tabs ----
+$$('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+function showTab(name) {
+  $$('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  $$('main > section').forEach(s => s.hidden = s.id !== 'tab-' + name);
+  location.hash = name;
+  ({documents: loadDocs, facts: loadFacts, relations: loadRels, showcase: loadShowcase, stats: loadStats})[name]?.();
+}
+
+// ---- documents ----
+const drop = $('#drop'), file = $('#file');
+drop.onclick = () => file.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); uploadFiles(e.dataTransfer.files); };
+file.onchange = () => uploadFiles(file.files);
+async function uploadFiles(list) {
+  const fd = new FormData(); [...list].forEach(f => fd.append('files', f));
+  await api('/api/documents', { method: 'POST', body: fd });
+  loadDocs();
+}
+function docLabel(d) { const m = d.meta || {}; return m.title || d.filename; }
+async function loadDocs() {
+  const { documents, processing } = await api('/api/documents');
+  DOCS = documents;
+  const sel = ['#fdoc', '#rdoc'].map(s => $(s));
+  sel.forEach(s => { const v = s.value; s.innerHTML = '<option value="">all documents</option>' + documents.map(d => `<option value="${d.id}">${esc(docLabel(d)).slice(0, 70)}</option>`).join(''); s.value = v; });
+  if (!documents.length) { $('#docs').innerHTML = '<div class="empty">No documents yet. Upload a PDF to start.</div>'; return; }
+  $('#docs').innerHTML = documents.map(d => {
+    const m = d.meta || {}; const busy = ['queued', 'extracting', 'linking'].includes(d.status);
+    const st = d.status === 'done' ? 'ok' : d.status === 'failed' ? 'bad' : 'accent';
+    return `<div class="card" style="margin-bottom:10px">
+      <div class="row" style="justify-content:space-between">
+        <div><b>${esc(docLabel(d))}</b> <span class="muted mono">${esc(d.filename)} · ${d.page_count} pages · id ${d.id}</span></div>
+        <div><span class="pill ${st}">${d.status}</span> ${busy ? '' : `<button class="ghost" onclick="delDoc('${d.id}')">remove</button>`}</div>
+      </div>
+      <div class="muted" style="margin-top:6px">${esc(m.publisher || '')} ${m.doc_type ? '· ' + esc(m.doc_type) : ''} ${m.publication_date ? '· published ' + esc(m.publication_date) : ''} ${m.period_covered_start ? '· covers ' + esc(m.period_covered_start) + ' → ' + esc(m.period_covered_end) : ''}</div>
+      ${m.fiscal_year_convention ? `<div class="muted" style="font-size:12px">Year convention: ${esc(m.fiscal_year_convention)}</div>` : ''}
+      ${m.data_vintage_notes ? `<div class="muted" style="font-size:12px">Vintage: ${esc(m.data_vintage_notes)}</div>` : ''}
+      <div class="row" style="margin-top:8px; gap:16px">
+        <span><b>${d.facts}</b> <span class="muted">facts</span></span>
+        <span><b>${d.relations}</b> <span class="muted">relations</span></span>
+        <span><b>${d.unverified}</b> <span class="muted">unverified quotes</span></span>
+        ${m.processing_seconds ? `<span class="muted">${m.processing_seconds}s</span>` : ''}
+        <span class="muted mono">${esc(d.progress || '')}</span>
+      </div>
+      ${busy ? '<div class="progress"><i></i></div>' : ''}
+      ${d.error ? `<details><summary>error</summary><pre class="mono">${esc(d.error)}</pre></details>` : ''}
+      ${(m.warnings || []).map(w => `<div class="pill warn">${esc(w)}</div>`).join('')}
+    </div>`;
+  }).join('');
+  if (documents.some(d => ['queued', 'extracting', 'linking'].includes(d.status))) setTimeout(() => { if (!$('#tab-documents').hidden) loadDocs(); }, 2500);
+}
+async function delDoc(id) { if (!confirm('Remove this document and all its facts/relations?')) return; await api('/api/documents/' + id, { method: 'DELETE' }); loadDocs(); }
+
+// ---- facts ----
+function valueOf(f) {
+  if (f.kind !== 'numeric') return esc(f.value_text);
+  return `${esc(f.value_text)} <span class="muted">${esc(f.unit || '')}${f.scale && f.scale !== 'none' ? ' ' + esc(f.scale) : ''}</span>`;
+}
+function periodOf(f) { return esc(f.period_label || '') + (f.period_start ? `<div class="muted mono">${esc(f.period_start)} → ${esc(f.period_end)}</div>` : ''); }
+function groundPill(f) {
+  const cls = f.grounding === 'exact' ? 'ok' : f.grounding === 'fuzzy' ? 'warn' : f.grounding === 'window' ? 'info' : 'bad';
+  const flags = (f.flags || []).filter(x => x !== 'quote_not_contiguous');
+  return `<span class="pill ${cls}">${f.grounding}</span>` + flags.map(x => `<span class="pill ${x.startsWith('page_corrected') ? 'info' : 'warn'}">${esc(x)}</span>`).join('');
+}
+$('#fgo').onclick = () => loadFacts();
+$('#fq').onkeydown = e => { if (e.key === 'Enter') loadFacts(); };
+async function loadFacts() {
+  const p = new URLSearchParams({ limit: 300 });
+  const q = $('#fq').value.trim(); if (q) p.set('q', q);
+  for (const [id, k] of [['#fdoc', 'doc_id'], ['#fkind', 'kind'], ['#fground', 'grounding'], ['#fflag', 'flagged']]) { const v = $(id).value; if (v) p.set(k, v); }
+  const { total, facts } = await api('/api/facts?' + p);
+  $('#fcount').textContent = `${facts.length} of ${total}`;
+  $('#ftable tbody').innerHTML = facts.map(f => `<tr class="clickable" onclick="openFact('${f.id}')">
+    <td><div class="doc" style="color:var(--accent)">${esc((f.doc_title || f.doc_filename).slice(0, 40))}</div><span class="muted">p.${f.page_no}</span></td>
+    <td>${esc(f.subject)}</td><td>${esc(f.attribute)}</td><td>${valueOf(f)}</td><td>${periodOf(f)}</td>
+    <td class="muted">${esc([f.basis, f.scope].filter(Boolean).join(' · '))}</td><td>${groundPill(f)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">no facts match</td></tr>';
+}
+
+// ---- fact modal with highlighted evidence ----
+const modal = $('#modal'); modal.onclick = e => { if (e.target === modal) modal.classList.remove('open'); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') modal.classList.remove('open'); });
+function highlight(text, s, e, quote) {
+  if (s != null && e != null && e > s) return esc(text.slice(0, s)) + '<mark>' + esc(text.slice(s, e)) + '</mark>' + esc(text.slice(e));
+  if (quote) { const i = text.indexOf(quote); if (i >= 0) return esc(text.slice(0, i)) + '<mark>' + esc(quote) + '</mark>' + esc(text.slice(i + quote.length)); }
+  return esc(text);
+}
+async function openFact(id) {
+  const f = await api('/api/facts/' + id);
+  $('#modal-body').innerHTML = `
+    <div class="row" style="justify-content:space-between"><div><span class="pill accent">${esc(f.doc_title || f.doc_filename)}</span> <span class="pill">page ${f.page_no}</span> ${groundPill(f)}</div><button class="ghost" onclick="modal.classList.remove('open')">close</button></div>
+    <div class="fact" style="margin:12px 0"><div class="attr">${esc(f.subject)} · ${esc(f.attribute)}</div><div class="val">${valueOf(f)}</div>
+      <div class="muted" style="font-size:12px">${esc(f.period_label || '')} ${f.period_start ? `(${esc(f.period_start)} → ${esc(f.period_end)})` : ''} ${f.basis ? '· ' + esc(f.basis) : ''} ${f.scope ? '· ' + esc(f.scope) : ''} · confidence ${f.confidence ?? '?'}</div>
+      <blockquote>${esc(f.quote)}</blockquote></div>
+    <div class="grid2">
+      <div><h2 style="margin-top:0">Page ${f.page_no} text <small>quote highlighted${f.grounding === 'fuzzy' ? ' (fuzzy match, score ' + Math.round(f.grounding_score) + ')' : f.grounding === 'window' ? ' (tokens found, not contiguous — highlighted window)' : f.grounding === 'unverified' ? ' — NOT FOUND on this page' : ''}</small> <a class="muted" style="font-size:12px" target="_blank" href="/api/documents/${f.doc_id}/pdf#page=${f.page_no}">open PDF ↗</a></h2>
+        <pre class="page" id="pagetext">${highlight(f.page_text, f.quote_start, f.quote_end, f.quote)}</pre></div>
+      <div><h2 style="margin-top:0">Relations <small>${f.relations.length}</small></h2>${f.relations.map(r => relCard(r, f.id)).join('') || '<div class="empty">no cross-document relations for this fact</div>'}</div>
+    </div>`;
+  modal.classList.add('open');
+  const m = $('#pagetext mark'); if (m) m.scrollIntoView({ block: 'center' });
+}
+
+// ---- relations ----
+function factBox(f) {
+  return `<div class="fact clickable" onclick="openFact('${f.id}')" style="cursor:pointer">
+    <div class="doc">${esc(f.doc_title || f.doc_filename)} <span class="muted">· p.${f.page_no}${f.doc_date ? ' · ' + esc(f.doc_date) : ''}</span></div>
+    <div class="attr">${esc(f.subject)} · ${esc(f.attribute)}</div>
+    <div class="val">${valueOf(f)}</div>
+    <div class="muted" style="font-size:12px">${esc(f.period_label || '—')} ${f.period_start ? `(${esc(f.period_start)} → ${esc(f.period_end)})` : ''} ${f.basis ? '· ' + esc(f.basis) : ''} ${f.scope ? '· ' + esc(f.scope) : ''}</div>
+    <blockquote>${esc(f.quote)}</blockquote>
+    <div style="margin-top:6px">${groundPill(f)}</div></div>`;
+}
+function relCard(r) {
+  return `<div class="card rel ${r.type}">
+    <div class="head"><div><span class="type">${r.type}</span> ${r.reconciliation ? `<span class="pill warn">${esc(r.reconciliation)}</span>` : ''} <span class="pill">${r.method}</span> <span class="pill">confidence ${Number(r.confidence).toFixed(2)}</span></div><span class="muted mono">${r.id}</span></div>
+    <div class="grid2">${factBox(r.a)}${factBox(r.b)}</div>
+    <div class="reason"><b>Reasoning</b> — ${esc(r.reasoning)}</div></div>`;
+}
+$('#rgo').onclick = () => loadRels();
+$('#rq').onkeydown = e => { if (e.key === 'Enter') loadRels(); };
+async function loadRels() {
+  const p = new URLSearchParams({ limit: 100 });
+  for (const [id, k] of [['#rtype', 'type'], ['#rrec', 'reconciliation'], ['#rdoc', 'doc_id'], ['#rmethod', 'method'], ['#rq', 'q']]) { const v = $(id).value.trim(); if (v) p.set(k, v); }
+  const { total, relations } = await api('/api/relations?' + p);
+  $('#rcount').textContent = `${relations.length} of ${total}`;
+  $('#rels').innerHTML = relations.map(relCard).join('') || '<div class="empty">no relations yet — upload a second document to get cross-document comparisons</div>';
+}
+
+// ---- showcase ----
+function factRow(f, why) {
+  return `<tr class="clickable" onclick="openFact('${f.id}')"><td><span style="color:var(--accent)">${esc((f.doc_title || f.doc_filename).slice(0, 40))}</span> <span class="muted">p.${f.page_no}</span></td><td>${esc(f.subject)} · ${esc(f.attribute)}</td><td>${valueOf(f)}</td><td class="muted" style="max-width:420px">${esc(f.quote).slice(0, 160)}</td><td>${groundPill(f)}</td></tr>`;
+}
+async function loadShowcase() {
+  const s = await api('/api/showcase');
+  const section = (title, sub, rels) => `<h2>${title} <small>${sub}</small></h2>` + (rels.length ? rels.map(relCard).join('') : '<div class="empty">nothing yet</div>');
+  const fails = s.failures;
+  const table = rows => `<div class="card" style="padding:0;margin-bottom:12px"><table><tbody>${rows.map(factRow).join('') || '<tr><td class="empty">none</td></tr>'}</tbody></table></div>`;
+  $('#show').innerHTML =
+    section('Case 1 — Corroborated across documents', 'same fact, different wording / formatting', s.corroborated.slice(0, 6)) +
+    section('Case 2 — Contradictions', 'same subject, attribute, period and scope; values disagree', s.contradictions.slice(0, 6)) +
+    section('Case 3 — Apparent contradictions explained by context', 'one example per reconciliation kind first', s.reconciled.slice(0, 8)) +
+    `<h2>Case 4 — Extraction / reasoning failures the system caught <small>flagged automatically during grounding and linking</small></h2>
+     <h3 class="muted" style="font-size:13px">Quote not found on the cited page (grounding = unverified) <small>${fails.quote_not_found.length}</small></h3>${table(fails.quote_not_found)}
+     <h3 class="muted" style="font-size:13px">Number in the fact is not in the quoted evidence <small>${fails.value_not_in_quote.length}</small></h3>${table(fails.value_not_in_quote)}
+     <h3 class="muted" style="font-size:13px">Model cited the wrong page; grounding corrected it <small>${fails.page_corrected.length}</small></h3>${table(fails.page_corrected)}
+     <h3 class="muted" style="font-size:13px">Low model confidence <small>${fails.low_confidence.length}</small></h3>${table(fails.low_confidence)}
+     <h3 class="muted" style="font-size:13px">False candidate matches the judge rejected as unrelated <small>${fails.unrelated_but_matched.length}</small></h3>${fails.unrelated_but_matched.slice(0, 3).map(relCard).join('') || '<div class="empty">none</div>'}
+     <h3 class="muted" style="font-size:13px">Model calls that failed <small>${fails.llm_errors.length}</small></h3><div class="card" style="padding:0"><table><tbody>${fails.llm_errors.map(e => `<tr><td class="muted">${esc(e.purpose)} · ${esc(e.model || '')}</td><td class="mono">${esc(e.error)}</td></tr>`).join('') || '<tr><td class="empty">none</td></tr>'}</tbody></table></div>`;
+}
+
+// ---- stats ----
+async function loadStats() {
+  const s = await api('/api/stats');
+  const f = s.facts || {};
+  const rel = t => s.relations.filter(r => r.type === t).reduce((a, r) => a + r.n, 0);
+  $('#stats').innerHTML = `<div class="row" style="gap:12px">
+    ${[['facts', f.n], ['numeric', f.numeric], ['statements', f.statement], ['exact grounding', f.exact], ['fuzzy', f.fuzzy], ['unverified', f.unverified], ['flagged', f.flagged],
+       ['corroborates', rel('corroborates')], ['contradicts', rel('contradicts')], ['reconciled', rel('reconciled')], ['unrelated', rel('unrelated')]]
+      .map(([k, v]) => `<div class="card stat">${v ?? 0}<small>${k}</small></div>`).join('')}</div>
+    <h2>Reconciliation kinds</h2><div class="card">${s.reconciliations.map(r => `<span class="pill warn">${esc(r.reconciliation || '?')} ${r.n}</span>`).join(' ') || '<span class="muted">none yet</span>'}</div>
+    <h2>Model calls <small>backend ${esc(s.config.backend)} · fast=${esc(s.config.model_fast)} · smart=${esc(s.config.model_smart)}</small></h2>
+    <div class="card" style="padding:0"><table><thead><tr><th>purpose</th><th>model</th><th>calls</th><th>ok</th><th>avg s</th><th>input tok</th><th>output tok</th><th>usd (as reported)</th></tr></thead><tbody>
+    ${s.llm.map(r => `<tr><td>${esc(r.purpose)}</td><td class="mono">${esc(r.model || '')}</td><td>${r.calls}</td><td>${r.ok}</td><td>${r.avg_s}</td><td>${r.input_tokens ?? ''}</td><td>${r.output_tokens ?? ''}</td><td>${r.usd ?? ''}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+showTab(location.hash.replace('#', '') || 'documents');
+</script>
+</body>
+</html>
