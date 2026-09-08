@@ -141,6 +141,8 @@ def _store(rels: list[dict[str, Any]], replace: bool) -> int:
     with db.tx() as conn:
         for r in rels:
             a, b = sorted((r["a"]["id"], r["b"]["id"]))
+            if replace and conn.execute("SELECT 1 FROM relations WHERE fact_a=? AND fact_b=? AND method='deterministic'", (a, b)).fetchone():
+                continue  # arithmetic already settled this pair
             verb = "INSERT OR REPLACE" if replace else "INSERT OR IGNORE"
             cur = conn.execute(
                 f"{verb} INTO relations (id,fact_a,fact_b,type,reconciliation,confidence,reasoning,method,cross_document,created_at)"
@@ -198,12 +200,14 @@ async def link_document(doc_id: str) -> dict[str, int]:
             pairs_seen.add(key)
             d = deterministic(f, m)
             if d:
-                det_rels.append({"a": f, "b": m, **d})
-            undecided.append(m)  # the model still sees it: it may add reasoning or overrule
+                det_rels.append({"a": f, "b": m, **d})  # settled by arithmetic - not sent to the model
+            else:
+                undecided.append(m)
         if undecided:
             groups.append([f] + undecided)
     stats["groups"] = len(groups)
-    db.set_doc_status(doc_id, progress=f"linking: {stats['candidates']} candidate pairs in {len(groups)} groups")
+    stats["deterministic_relations"] = _store(det_rels, replace=False)
+    db.set_doc_status(doc_id, progress=f"linking: {stats['candidates']} candidate pairs, {stats['deterministic_relations']} settled by arithmetic, {len(groups)} groups for the model")
 
     # Batch several groups per call to amortise the per-call overhead; keep each call to ~40 facts.
     batches: list[list[list[dict[str, Any]]]] = []
@@ -232,5 +236,4 @@ async def link_document(doc_id: str) -> dict[str, int]:
         db.set_doc_status(doc_id, progress=f"linking: {done}/{len(batches)} batches, {stats['llm_relations']} relations")
 
     await asyncio.gather(*(run(b) for b in batches))
-    stats["deterministic_relations"] = _store(det_rels, replace=False)
     return stats

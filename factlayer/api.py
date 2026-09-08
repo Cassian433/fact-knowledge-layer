@@ -211,7 +211,8 @@ def showcase() -> dict[str, Any]:
         return _attach_facts(rels)
 
     corroborated = pick("r.type='corroborates' AND r.method='llm'",
-                        "(fa.value_text<>fb.value_text OR fa.attribute<>fb.attribute) DESC, (fa.kind='statement') DESC, r.confidence DESC", 12)
+                        "(fa.scale<>fb.scale OR fa.unit<>fb.unit) DESC, (fa.value_text<>fb.value_text OR fa.attribute<>fb.attribute) DESC, "
+                        "(fa.kind='statement') DESC, r.confidence DESC", 12)
     contradictions = pick("r.type='contradicts'", "r.confidence DESC", 12)
     reconciled = pick("r.type='reconciled'", "r.confidence DESC", 40)
     # one best example per reconciliation kind first, then the rest
