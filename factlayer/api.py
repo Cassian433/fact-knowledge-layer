@@ -36,18 +36,39 @@ def index() -> FileResponse:
 
 
 # --- documents --------------------------------------------------------------------------------------------------------
+def _writable() -> None:
+    if config.READ_ONLY:
+        raise HTTPException(403, "this is a read-only public demo; run the project locally to upload documents")
+
+
 @app.post("/api/documents")
 async def upload(files: list[UploadFile], replace: bool = False) -> dict[str, Any]:
+    _writable()
     out = []
     for f in files:
         if not (f.filename or "").lower().endswith(".pdf"):
             out.append({"filename": f.filename, "error": "only PDF files are accepted"})
             continue
+        if pipeline.worker.queue.qsize() >= config.MAX_QUEUE:
+            out.append({"filename": f.filename, "error": f"queue is full ({config.MAX_QUEUE} documents waiting) - try again in a few minutes"})
+            continue
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", dir=config.UPLOAD_DIR) as tmp:
             shutil.copyfileobj(f.file, tmp)
             tmp_path = Path(tmp.name)
         try:
+            if tmp_path.stat().st_size > config.MAX_UPLOAD_MB * 1e6:
+                out.append({"filename": f.filename, "error": f"file larger than {config.MAX_UPLOAD_MB:g} MB"})
+                continue
+            import pymupdf
+            with pymupdf.open(tmp_path) as pdf_doc:
+                n_pages = len(pdf_doc)
+            if n_pages > config.MAX_PAGES:
+                out.append({"filename": f.filename, "error": f"{n_pages} pages; this instance accepts up to {config.MAX_PAGES}"})
+                continue
             doc_id, is_new = pipeline.register(tmp_path, f.filename or tmp_path.name, replace=replace)
+        except Exception as e:  # noqa: BLE001 - corrupt / non-PDF uploads
+            out.append({"filename": f.filename, "error": f"could not read as PDF: {e}"})
+            continue
         finally:
             tmp_path.unlink(missing_ok=True)
         if is_new:
@@ -86,6 +107,7 @@ def get_document(doc_id: str) -> dict[str, Any]:
 
 @app.delete("/api/documents/{doc_id}")
 def remove_document(doc_id: str) -> dict[str, Any]:
+    _writable()
     if not db.one("SELECT id FROM documents WHERE id=?", (doc_id,)):
         raise HTTPException(404, "no such document")
     pipeline.delete_document(doc_id)
@@ -270,7 +292,7 @@ def stats() -> dict[str, Any]:
         "llm": db.q("SELECT purpose, model, COUNT(*) calls, SUM(ok) ok, ROUND(SUM(cost_usd),3) usd, ROUND(AVG(duration_ms)/1000.0,1) avg_s, "
                     "SUM(input_tokens) input_tokens, SUM(output_tokens) output_tokens FROM llm_calls GROUP BY purpose, model"),
         "config": {"backend": config.LLM_BACKEND, "model_fast": config.MODEL_FAST, "model_smart": config.MODEL_SMART,
-                   "chunk_chars": config.CHUNK_CHARS, "sim_threshold": config.SIM_THRESHOLD},
+                   "chunk_chars": config.CHUNK_CHARS, "sim_threshold": config.SIM_THRESHOLD, "read_only": config.READ_ONLY},
     }
 
 

@@ -32,5 +32,12 @@ MAX_NEIGHBOURS = int(os.getenv("FACTLAYER_MAX_NEIGHBOURS", "5"))
 MAX_CLUSTER = int(os.getenv("FACTLAYER_MAX_CLUSTER", "10"))
 NUMERIC_TOLERANCE = float(os.getenv("FACTLAYER_NUMERIC_TOLERANCE", "0.01"))  # 1 % => same number
 
+# Public demo mode: browse only - uploads and deletes are refused, the UI hides them.
+READ_ONLY = os.getenv("FACTLAYER_READ_ONLY", "0") in ("1", "true", "yes")
+# Public-instance guard rails (the live demo runs on a laptop against a subscription-backed model).
+MAX_UPLOAD_MB = float(os.getenv("FACTLAYER_MAX_UPLOAD_MB", "30"))
+MAX_PAGES = int(os.getenv("FACTLAYER_MAX_PAGES", "150"))
+MAX_QUEUE = int(os.getenv("FACTLAYER_MAX_QUEUE", "3"))
+
 for _d in (DATA_DIR, UPLOAD_DIR):
     _d.mkdir(parents=True, exist_ok=True)

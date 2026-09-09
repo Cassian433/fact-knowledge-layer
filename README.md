@@ -13,6 +13,15 @@ and an LLM behind a one-function interface.
 > The same file is in the repo at [`docs/demo/demo.mp4`](docs/demo/demo.mp4). It is a scripted screen capture with
 > on-screen captions instead of narration (`docs/record_demo.py` drives the real UI with Playwright; nothing is mocked).
 
+> **Live:**
+> - **Full instance (upload your own PDFs):** https://sarthak-loq-15irx9.taild8bf25.ts.net/ — the real backend, running on
+>   my machine behind a Tailscale funnel. Documents are processed with the same pipeline as below (a 3-page PDF takes
+>   ~4 minutes, a 100-page one ~15); limits: 30 MB, 150 pages, 3 documents queued. If it is unreachable, the machine is
+>   off — use the mirror or run locally.
+> - **Static mirror (browse only):** https://cassian433.github.io/fact-knowledge-layer/ — the same UI on GitHub Pages,
+>   answered from the exported run (`docs/export_static.py`): all facts, page texts with highlighted evidence, relations,
+>   the four cases, and the PDFs.
+
 ---
 
 ## Setup and run
@@ -38,6 +47,7 @@ linked against everything already in the layer. Or use the CLI:
 uv run python -m factlayer.cli ingest path/to/a.pdf path/to/b.pdf   # processes in order, prints counts
 uv run python -m factlayer.cli stats                                 # facts / relations / model calls + spend
 uv run python -m factlayer.cli reground                              # re-run quote verification (no model calls)
+uv run python docs/export_static.py site                              # static, browse-only copy of the layer (GitHub Pages)
 ```
 
 The first run downloads a ~130 MB sentence-embedding model (`BAAI/bge-small-en-v1.5`, runs on CPU) into `data/models/`.

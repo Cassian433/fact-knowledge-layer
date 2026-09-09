@@ -97,6 +97,7 @@
 </header>
 <main>
   <section id="tab-documents">
+    <div class="card" id="ro-banner" hidden style="border-color:rgba(255,179,71,.5)"><b>Static mirror (GitHub Pages).</b> Browse the documents, facts, evidence and cross-document relations exported from a run. To upload your own PDFs use the <a href="https://sarthak-loq-15irx9.taild8bf25.ts.net/" style="color:var(--accent)">live instance</a> or run the project locally — <a href="https://github.com/Cassian433/fact-knowledge-layer" style="color:var(--accent)">README</a>.</div>
     <div class="drop" id="drop">Drop PDFs here or click to upload — each file is processed in the background and linked against everything already in the layer.<input type="file" id="file" accept="application/pdf" multiple hidden></div>
     <div id="docs" style="margin-top:14px"></div>
   </section>
@@ -142,13 +143,18 @@
 const $ = (s, el=document) => el.querySelector(s);
 const $$ = (s, el=document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const api = async (p, opts) => { const r = await fetch(p, opts); if (!r.ok) throw new Error(await r.text()); return r.json(); };
+// In the static (GitHub Pages) build, static-api.js defines window.STATIC_API and answers the same paths from JSON files.
+const api = async (p, opts) => { if (window.STATIC_API) return window.STATIC_API(p, opts); const r = await fetch(p, opts); if (!r.ok) throw new Error(await r.text()); return r.json(); };
+const pdfUrl = (id, page) => (window.STATIC_PDF ? window.STATIC_PDF(id) : `/api/documents/${id}/pdf`) + `#page=${page}`;
 let DOCS = [];
 const PALETTE = ['#5b9cff', '#3ccf91', '#ffb347', '#b48cff', '#ff8fab', '#4fd1c5', '#f6e05e', '#f97316'];
 function docColor(id) { const i = DOCS.findIndex(d => d.id === id); return PALETTE[(i < 0 ? 0 : i) % PALETTE.length]; }
+let READ_ONLY = false;
 async function loadHeaderStats() {
   try {
     const s = await api('/api/stats');
+    READ_ONLY = !!(s.config && s.config.read_only);
+    $('#ro-banner').hidden = !READ_ONLY; $('#drop').hidden = READ_ONLY;
     const f = s.facts || {}; const rel = t => s.relations.filter(r => r.type === t).reduce((a, r) => a + r.n, 0);
     const docs = s.documents.reduce((a, d) => a + d.n, 0);
     const grounded = f.n ? Math.round(100 * (f.n - (f.unverified || 0)) / f.n) : 0;
@@ -175,7 +181,11 @@ drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); uploadFi
 file.onchange = () => uploadFiles(file.files);
 async function uploadFiles(list) {
   const fd = new FormData(); [...list].forEach(f => fd.append('files', f));
-  await api('/api/documents', { method: 'POST', body: fd });
+  try {
+    const res = await api('/api/documents', { method: 'POST', body: fd });
+    const errs = (res.documents || []).filter(d => d.error).map(d => `${d.filename}: ${d.error}`);
+    if (errs.length) alert(errs.join('\n'));
+  } catch (e) { alert('Upload failed: ' + e.message); }
   loadDocs();
 }
 function docLabel(d) { const m = d.meta || {}; return m.title || d.filename; }
@@ -191,7 +201,7 @@ async function loadDocs() {
     return `<div class="card" style="margin-bottom:10px">
       <div class="row" style="justify-content:space-between">
         <div><span class="dot" style="background:${docColor(d.id)}"></span><b>${esc(docLabel(d))}</b> <span class="muted mono">${esc(d.filename)} · ${d.page_count} pages · id ${d.id}</span></div>
-        <div><span class="pill ${st}">${d.status}</span> ${busy ? '' : `<button class="ghost" onclick="delDoc('${d.id}')">remove</button>`}</div>
+        <div><span class="pill ${st}">${d.status}</span> ${busy || READ_ONLY ? '' : `<button class="ghost" onclick="delDoc('${d.id}')">remove</button>`}</div>
       </div>
       <div class="muted" style="margin-top:6px">${esc(m.publisher || '')} ${m.doc_type ? '· ' + esc(m.doc_type) : ''} ${m.publication_date ? '· published ' + esc(m.publication_date) : ''} ${m.period_covered_start ? '· covers ' + esc(m.period_covered_start) + ' → ' + esc(m.period_covered_end) : ''}</div>
       ${m.fiscal_year_convention ? `<div class="muted" style="font-size:12px">Year convention: ${esc(m.fiscal_year_convention)}</div>` : ''}
@@ -253,7 +263,7 @@ async function openFact(id) {
       <div class="muted" style="font-size:12px">${esc(f.period_label || '')} ${f.period_start ? `(${esc(f.period_start)} → ${esc(f.period_end)})` : ''} ${f.basis ? '· ' + esc(f.basis) : ''} ${f.scope ? '· ' + esc(f.scope) : ''} · confidence ${f.confidence ?? '?'}</div>
       <blockquote>${esc(f.quote)}</blockquote></div>
     <div class="grid2">
-      <div><h2 style="margin-top:0">Page ${f.page_no} text <small>quote highlighted${f.grounding === 'fuzzy' ? ' (fuzzy match, score ' + Math.round(f.grounding_score) + ')' : f.grounding === 'window' ? ' (tokens found, not contiguous — highlighted window)' : f.grounding === 'unverified' ? ' — NOT FOUND on this page' : ''}</small> <a class="muted" style="font-size:12px" target="_blank" href="/api/documents/${f.doc_id}/pdf#page=${f.page_no}">open PDF ↗</a></h2>
+      <div><h2 style="margin-top:0">Page ${f.page_no} text <small>quote highlighted${f.grounding === 'fuzzy' ? ' (fuzzy match, score ' + Math.round(f.grounding_score) + ')' : f.grounding === 'window' ? ' (tokens found, not contiguous — highlighted window)' : f.grounding === 'unverified' ? ' — NOT FOUND on this page' : ''}</small> <a class="muted" style="font-size:12px" target="_blank" href="${pdfUrl(f.doc_id, f.page_no)}">open PDF ↗</a></h2>
         <pre class="page" id="pagetext">${highlight(f.page_text, f.quote_start, f.quote_end, f.quote)}</pre></div>
       <div><h2 style="margin-top:0">Relations <small>${f.relations.length}</small></h2>${f.relations.map(r => relCard(r, f.id)).join('') || '<div class="empty">no cross-document relations for this fact</div>'}</div>
     </div>
